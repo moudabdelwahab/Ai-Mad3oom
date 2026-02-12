@@ -10,6 +10,8 @@ const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
 const btnWritingStyle = document.getElementById('btn-writing-style');
 const btnDecision = document.getElementById('btn-decision');
+const typingIndicator = document.getElementById('typing-indicator');
+const memoryCountEl = document.getElementById('memory-count');
 
 let lastAssistantResponse = "";
 let lastUserMessage = "";
@@ -24,11 +26,11 @@ function initRealtime() {
         })
         .subscribe();
 
-    // Subscribe to brain_memory updates (optional for UI feedback)
+    // Subscribe to brain_memory updates
     supabase
         .channel('public:brain_memory')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'brain_memory' }, payload => {
-            console.log('Memory updated:', payload);
+            updateMemoryCount();
         })
         .subscribe();
 }
@@ -94,11 +96,27 @@ async function saveToMemory(type, trigger_keywords, response, weight) {
         response,
         weight
     }]);
+    // Alert replaced with a more subtle UI feedback if needed, but keeping alert as per original logic
     alert('تم الحفظ في الذاكرة بنجاح!');
+}
+
+async function updateMemoryCount() {
+    const { count, error } = await supabase
+        .from('brain_memory')
+        .select('*', { count: 'exact', head: true });
+    
+    if (!error) {
+        memoryCountEl.textContent = count;
+    }
 }
 
 // 4. UI Functions
 function displayMessage(msg) {
+    // Hide typing indicator when a new message arrives
+    if (msg.role === 'assistant') {
+        typingIndicator.classList.add('hidden');
+    }
+
     const div = document.createElement('div');
     div.className = `message ${msg.role}`;
     div.textContent = msg.content;
@@ -119,8 +137,15 @@ async function handleSend() {
     userInput.value = "";
     await saveMessage('user', text);
 
-    const response = await generateResponse(text);
-    await saveMessage('assistant', response);
+    // Show typing indicator
+    typingIndicator.classList.remove('hidden');
+    messagesList.scrollTop = messagesList.scrollHeight;
+
+    // Simulate a slight delay for better UX
+    setTimeout(async () => {
+        const response = await generateResponse(text);
+        await saveMessage('assistant', response);
+    }, 800);
 }
 
 // 5. Event Listeners
@@ -143,9 +168,13 @@ btnDecision.addEventListener('click', async () => {
 
 // Start
 initRealtime();
-// Load initial messages
+// Load initial data
 async function loadInitial() {
+    // Load messages
     const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
     if (data) data.forEach(displayMessage);
+    
+    // Load memory count
+    updateMemoryCount();
 }
 loadInitial();

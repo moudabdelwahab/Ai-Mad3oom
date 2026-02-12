@@ -3,30 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>المساعد الافتراضي الذكي</title>
+    <title>المساعد الافتراضي الذكي | Pro</title>
     <link rel="stylesheet" href="style.css">
     <!-- Supabase CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
-    <div class="container">
+    <div class="bg-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+    
+    <div class="container glass">
         <header>
-            <h1>المساعد الافتراضي الذكي</h1>
-            <p>نظام ذكاء اصطناعي محلي بالكامل</p>
+            <div class="header-content">
+                <div class="brand">
+                    <h1>المساعد الذكي</h1>
+                    <div class="status-badge">
+                        <span class="status-dot"></span>
+                        متصل الآن
+                    </div>
+                </div>
+                <div class="memory-counter" id="memory-counter-container">
+                    <span class="label">الذكريات النشطة</span>
+                    <span id="memory-count" class="count">0</span>
+                </div>
+            </div>
         </header>
 
         <main id="chat-container">
             <div id="messages-list"></div>
+            <div id="typing-indicator" class="typing-indicator hidden">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
         </main>
 
-        <footer class="input-area">
+        <footer class="input-area glass">
             <div class="action-buttons">
-                <button id="btn-writing-style" title="اعتمد كأسلوبي">اعتمد كأسلوبي</button>
-                <button id="btn-decision" title="قرار نهائي">قرار نهائي</button>
+                <button id="btn-writing-style" class="btn-secondary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    اعتمد كأسلوبي
+                </button>
+                <button id="btn-decision" class="btn-secondary">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    قرار نهائي
+                </button>
             </div>
             <div class="input-group">
                 <input type="text" id="user-input" placeholder="اكتب رسالتك هنا..." autocomplete="off">
-                <button id="send-btn">إرسال</button>
+                <button id="send-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                </button>
             </div>
         </footer>
     </div>
