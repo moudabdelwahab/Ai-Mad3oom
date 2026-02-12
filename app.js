@@ -1,12 +1,12 @@
-// Supabase Configuration - ضع مفاتيحك هنا
+// Supabase Configuration
 const SUPABASE_URL = 'https://cwolpcfqyyrwlbsgezdq.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_t0fNw2UMqWHDy41vVXYwOw_WndpkG_S';
 
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const supabase = supabaseClient;
+// استخدام اسم فريد لتجنب التعارض مع مكتبة Supabase العالمية (window.supabase)
+const dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Initialize Cognitive Engine
-const engine = new CognitiveGrowthEngine(supabase);
+const engine = new CognitiveGrowthEngine(dbClient);
 
 // DOM Elements
 const messagesList = document.getElementById('messages-list');
@@ -27,14 +27,14 @@ let messageHistory = [];
 
 // 1. Initialize Realtime Subscriptions
 function initRealtime() {
-    supabase
+    dbClient
         .channel('public:messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
             displayMessage(payload.new);
         })
         .subscribe();
 
-    supabase
+    dbClient
         .channel('public:ai_state')
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ai_state' }, payload => {
             updateCognitiveUI(payload.new);
@@ -52,9 +52,13 @@ function tokenizeText(text) {
 }
 
 async function matchMemory(tokens) {
-    const { data, error } = await supabase.from('brain_memory').select('*');
-    if (error) return [];
-    return data.filter(item => item.trigger_keywords.some(keyword => tokens.includes(keyword.toLowerCase())));
+    try {
+        const { data, error } = await dbClient.from('brain_memory').select('*');
+        if (error) return [];
+        return data.filter(item => item.trigger_keywords.some(keyword => tokens.includes(keyword.toLowerCase())));
+    } catch (e) {
+        return [];
+    }
 }
 
 function rankResults(matches) {
@@ -73,24 +77,30 @@ async function generateResponse(text) {
         response = ranked[0].response;
         isMatch = true;
     } else {
-        const { data: decisions } = await supabase.from('brain_memory').select('response').eq('type', 'decision').limit(1);
-        if (decisions && decisions.length > 0) {
-            response = "بناءً على قرارات سابقة: " + decisions[0].response;
-        } else {
+        try {
+            const { data: decisions } = await dbClient.from('brain_memory').select('response').eq('type', 'decision').limit(1);
+            if (decisions && decisions.length > 0) {
+                response = "بناءً على قرارات سابقة: " + decisions[0].response;
+            } else {
+                response = "لم أتعلم هذا بعد. يمكنك تعليمي.";
+            }
+        } catch (e) {
             response = "لم أتعلم هذا بعد. يمكنك تعليمي.";
         }
     }
 
     // Cognitive Layer: Check for Independence/Intervention
-    if (engine.shouldIntervene(text, response)) {
+    if (engine && engine.shouldIntervene && engine.shouldIntervene(text, response)) {
         const interventionPrefix = engine.currentMode === 'strategic' 
             ? "بصفتي مساعدك الاستراتيجي، أرى خياراً أفضل: " 
             : "هل فكرت في هذا البديل؟ ";
         response = `<span class="intervention-msg">${interventionPrefix}</span>` + response;
     }
 
-    // Evolve AI based on interaction success (match found = success)
-    await engine.evolveAI(isMatch);
+    // Evolve AI based on interaction success
+    if (engine && engine.evolveAI) {
+        await engine.evolveAI(isMatch).catch(console.error);
+    }
     
     return response;
 }
@@ -98,28 +108,31 @@ async function generateResponse(text) {
 // 3. Database Operations
 async function saveMessage(role, content) {
     try {
-        const { error } = await supabase.from('messages').insert([{ role, content }]);
+        const { error } = await dbClient.from('messages').insert([{ role, content }]);
         if (error) throw error;
     } catch (err) {
         console.error("Error saving message to Supabase:", err);
-        // لا نوقف العملية هنا لضمان استمرار تجربة المستخدم محلياً
     }
 }
 
 async function saveToMemory(type, trigger_keywords, response, weight) {
-    await supabase.from('brain_memory').insert([{ type, trigger_keywords, response, weight }]);
+    try {
+        await dbClient.from('brain_memory').insert([{ type, trigger_keywords, response, weight }]);
+    } catch (e) {
+        console.error("Error saving to memory:", e);
+    }
 }
 
 function updateCognitiveUI(state) {
     if (!state) return;
-    aiAgeEl.textContent = state.age_level;
-    aiIndependenceEl.textContent = Math.round(state.independence_score * 100) + "%";
-    aiModeEl.textContent = state.independence_score > 0.6 ? "Strategic" : "Support";
+    if (aiAgeEl) aiAgeEl.textContent = state.age_level || 1;
+    if (aiIndependenceEl) aiIndependenceEl.textContent = Math.round((state.independence_score || 0) * 100) + "%";
+    if (aiModeEl) aiModeEl.textContent = (state.independence_score > 0.6) ? "Strategic" : "Support";
 }
 
 // 4. UI Functions
 function displayMessage(msg) {
-    // منع تكرار الرسائل إذا كانت قادمة من Realtime وهي موجودة بالفعل
+    // منع تكرار الرسائل
     const existingMessages = Array.from(messagesList.querySelectorAll('.message'));
     const isDuplicate = existingMessages.some(el => el.innerHTML === msg.content && el.classList.contains(msg.role));
     if (isDuplicate) return;
@@ -128,7 +141,7 @@ function displayMessage(msg) {
 
     const div = document.createElement('div');
     div.className = `message ${msg.role}`;
-    div.innerHTML = msg.content; // Using innerHTML to support intervention-msg span
+    div.innerHTML = msg.content;
     messagesList.appendChild(div);
     messagesList.scrollTop = messagesList.scrollHeight;
     
@@ -138,7 +151,6 @@ function displayMessage(msg) {
         lastUserMessage = msg.content;
         messageHistory.push(msg);
         if (messageHistory.length > 50) messageHistory.shift();
-        // Analyze behavior every 5 messages
         if (engine && engine.aiState && messageHistory.length % 5 === 0) {
             engine.analyzeUserBehavior(messageHistory).catch(console.error);
         }
@@ -146,9 +158,7 @@ function displayMessage(msg) {
 }
 
 async function handleUserMessage(text) {
-    // عرض رسالة المستخدم فوراً في الواجهة
     displayMessage({ role: 'user', content: text });
-    
     await saveMessage('user', text);
 
     typingIndicator.classList.remove('hidden');
@@ -156,26 +166,22 @@ async function handleUserMessage(text) {
 
     setTimeout(async () => {
         const response = await generateResponse(text);
-        // عرض رد المساعد في الواجهة
         displayMessage({ role: 'assistant', content: response });
         await saveMessage('assistant', response);
     }, 800);
 }
 
 // 5. Event Listeners
-// استخدام مستمع واحد للفورم لضمان منع التحديث التلقائي
 if (chatForm) {
     chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const text = userInput.value.trim();
         if (!text) return;
-        
         userInput.value = "";
         handleUserMessage(text);
     });
 }
 
-// التأكد من ربط الأزرار بشكل صحيح
 if (btnWritingStyle) {
     btnWritingStyle.addEventListener('click', async (e) => {
         e.preventDefault();
@@ -217,12 +223,13 @@ function showNotification(message, type = "info") {
 // Start
 async function start() {
     try {
-        await engine.initialize();
+        if (engine && engine.initialize) {
+            await engine.initialize();
+            if (engine.aiState) updateCognitiveUI(engine.aiState);
+        }
         initRealtime();
-        if (engine.aiState) updateCognitiveUI(engine.aiState);
         
-        const { data, error } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
-        
+        const { data, error } = await dbClient.from('messages').select('*').order('created_at', { ascending: true });
         if (error) throw error;
 
         if (data && data.length > 0) {
@@ -232,7 +239,6 @@ async function start() {
         }
     } catch (err) {
         console.error("Initialization error:", err);
-        // في حالة الفشل، نعرض رسالة ترحيب على الأقل لضمان عدم بقاء الصفحة فارغة
         showWelcomeMessage();
     }
 }
@@ -244,5 +250,4 @@ function showWelcomeMessage() {
     });
 }
 
-// استخدام DOMContentLoaded لضمان تحميل العناصر قبل الربط
 window.addEventListener("DOMContentLoaded", start);
