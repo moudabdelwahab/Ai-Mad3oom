@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <!-- Supabase CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="growthEngine.js"></script>
 </head>
 <body>
     <div class="bg-blobs">
@@ -24,9 +25,19 @@
                         متصل الآن
                     </div>
                 </div>
-                <div class="memory-counter" id="memory-counter-container">
-                    <span class="label">الذكريات النشطة</span>
-                    <span id="memory-count" class="count">0</span>
+                <div class="cognitive-stats">
+                    <div class="stat-item" title="العمر المعرفي">
+                        <span class="label">العمر</span>
+                        <span id="ai-age" class="count">1</span>
+                    </div>
+                    <div class="stat-item" title="مستوى الاستقلالية">
+                        <span class="label">الاستقلال</span>
+                        <span id="ai-independence" class="count">0%</span>
+                    </div>
+                    <div class="stat-item" title="الوضع الحالي">
+                        <span class="label">الوضع</span>
+                        <span id="ai-mode" class="count">Support</span>
+                    </div>
                 </div>
             </div>
         </header>

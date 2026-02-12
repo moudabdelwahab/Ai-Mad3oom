@@ -290,3 +290,45 @@ input[type="text"] {
     .message { max-width: 85%; }
     header { padding: 1rem; }
 }
+
+/* Cognitive Stats Styles */
+.cognitive-stats {
+    display: flex;
+    gap: 1rem;
+}
+
+.stat-item {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.4rem 0.8rem;
+    border-radius: 10px;
+    text-align: center;
+    border: 1px solid var(--glass-border);
+    min-width: 60px;
+}
+
+.stat-item .label {
+    display: block;
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.stat-item .count {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+#ai-mode {
+    color: #ec4899; /* Strategic mode color */
+}
+
+.intervention-msg {
+    font-style: italic;
+    border-right: 3px solid #ec4899;
+    padding-right: 10px;
+    margin-bottom: 5px;
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
