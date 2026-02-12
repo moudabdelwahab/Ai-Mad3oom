@@ -17,13 +17,24 @@ class CognitiveGrowthEngine {
     }
 
     async syncState() {
-        const { data: aiData } = await this.supabase.from('ai_state').select('*').limit(1).single();
-        const { data: userData } = await this.supabase.from('user_model').select('*').limit(1).single();
-        this.aiState = aiData;
-        this.userModel = userData;
-        
-        // تحديد الوضع بناءً على الاستقلالية
-        this.currentMode = this.aiState.independence_score > 0.6 ? this.modes.STRATEGIC : this.modes.SUPPORT;
+        try {
+            const { data: aiData, error: aiError } = await this.supabase.from('ai_state').select('*').limit(1).single();
+            const { data: userData, error: userError } = await this.supabase.from('user_model').select('*').limit(1).single();
+            
+            if (aiError || userError) throw new Error("Database tables missing or connection failed");
+
+            this.aiState = aiData;
+            this.userModel = userData;
+            
+            // تحديد الوضع بناءً على الاستقلالية
+            this.currentMode = (this.aiState && this.aiState.independence_score > 0.6) ? this.modes.STRATEGIC : this.modes.SUPPORT;
+        } catch (err) {
+            console.warn("Cognitive Engine: Using default state due to connection error.", err);
+            // تعيين حالة افتراضية لضمان عمل التطبيق
+            this.aiState = { age_level: 1, independence_score: 0, intelligence_score: 0, confidence_score: 0.5, learning_speed: 0.1 };
+            this.userModel = { decisiveness_score: 0.5, consistency_score: 0.5 };
+            this.currentMode = this.modes.SUPPORT;
+        }
     }
 
     // خوارزمية تحليل سلوك المستخدم

@@ -97,7 +97,13 @@ async function generateResponse(text) {
 
 // 3. Database Operations
 async function saveMessage(role, content) {
-    await supabase.from('messages').insert([{ role, content }]);
+    try {
+        const { error } = await supabase.from('messages').insert([{ role, content }]);
+        if (error) throw error;
+    } catch (err) {
+        console.error("Error saving message to Supabase:", err);
+        // لا نوقف العملية هنا لضمان استمرار تجربة المستخدم محلياً
+    }
 }
 
 async function saveToMemory(type, trigger_keywords, response, weight) {
@@ -113,6 +119,11 @@ function updateCognitiveUI(state) {
 
 // 4. UI Functions
 function displayMessage(msg) {
+    // منع تكرار الرسائل إذا كانت قادمة من Realtime وهي موجودة بالفعل
+    const existingMessages = Array.from(messagesList.querySelectorAll('.message'));
+    const isDuplicate = existingMessages.some(el => el.innerHTML === msg.content && el.classList.contains(msg.role));
+    if (isDuplicate) return;
+
     if (msg.role === 'assistant') typingIndicator.classList.add('hidden');
 
     const div = document.createElement('div');
@@ -128,11 +139,16 @@ function displayMessage(msg) {
         messageHistory.push(msg);
         if (messageHistory.length > 50) messageHistory.shift();
         // Analyze behavior every 5 messages
-        if (messageHistory.length % 5 === 0) engine.analyzeUserBehavior(messageHistory);
+        if (engine && engine.aiState && messageHistory.length % 5 === 0) {
+            engine.analyzeUserBehavior(messageHistory).catch(console.error);
+        }
     }
 }
 
 async function handleUserMessage(text) {
+    // عرض رسالة المستخدم فوراً في الواجهة
+    displayMessage({ role: 'user', content: text });
+    
     await saveMessage('user', text);
 
     typingIndicator.classList.remove('hidden');
@@ -140,6 +156,8 @@ async function handleUserMessage(text) {
 
     setTimeout(async () => {
         const response = await generateResponse(text);
+        // عرض رد المساعد في الواجهة
+        displayMessage({ role: 'assistant', content: response });
         await saveMessage('assistant', response);
     }, 800);
 }
@@ -198,21 +216,32 @@ function showNotification(message, type = "info") {
 
 // Start
 async function start() {
-    await engine.initialize();
-    initRealtime();
-    updateCognitiveUI(engine.aiState);
-    
-    const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
-    
-    if (data && data.length > 0) {
-        data.forEach(displayMessage);
-    } else {
-        // رسالة ترحيب تلقائية إذا لم تكن هناك رسائل محفوظة
-        displayMessage({
-            role: 'assistant',
-            content: "أهلاً، أنا مدعوم 👋 جاهز أتعلم معك وأتطور."
-        });
+    try {
+        await engine.initialize();
+        initRealtime();
+        if (engine.aiState) updateCognitiveUI(engine.aiState);
+        
+        const { data, error } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
+        
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+            data.forEach(displayMessage);
+        } else {
+            showWelcomeMessage();
+        }
+    } catch (err) {
+        console.error("Initialization error:", err);
+        // في حالة الفشل، نعرض رسالة ترحيب على الأقل لضمان عدم بقاء الصفحة فارغة
+        showWelcomeMessage();
     }
+}
+
+function showWelcomeMessage() {
+    displayMessage({
+        role: 'assistant',
+        content: "أهلاً، أنا مدعوم 👋 جاهز أتعلم معك وأتطور."
+    });
 }
 
 // استخدام DOMContentLoaded لضمان تحميل العناصر قبل الربط
