@@ -145,26 +145,43 @@ async function handleUserMessage(text) {
 }
 
 // 5. Event Listeners
-chatForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const text = userInput.value.trim();
-    if (!text) return;
-    
-    userInput.value = "";
-    handleUserMessage(text);
-});
+// استخدام مستمع واحد للفورم لضمان منع التحديث التلقائي
+if (chatForm) {
+    chatForm.onsubmit = (e) => {
+        e.preventDefault();
+        const text = userInput.value.trim();
+        if (!text) return false;
+        
+        userInput.value = "";
+        handleUserMessage(text);
+        return false;
+    };
+}
 
-btnWritingStyle.addEventListener('click', async () => {
-    if (!lastAssistantResponse || !lastUserMessage) return;
-    const keywords = tokenizeText(lastUserMessage);
-    await saveToMemory('writing_style', keywords, lastAssistantResponse, 2);
-});
+// التأكد من ربط الأزرار بشكل صحيح
+if (btnWritingStyle) {
+    btnWritingStyle.onclick = async (e) => {
+        e.preventDefault();
+        if (!lastAssistantResponse || !lastUserMessage) {
+            alert("لا توجد رسائل كافية لاعتماد الأسلوب.");
+            return;
+        }
+        const keywords = tokenizeText(lastUserMessage);
+        await saveToMemory('writing_style', keywords, lastAssistantResponse, 2);
+    };
+}
 
-btnDecision.addEventListener('click', async () => {
-    if (!lastUserMessage) return;
-    const keywords = tokenizeText(lastUserMessage);
-    await saveToMemory('decision', keywords, lastUserMessage, 3);
-});
+if (btnDecision) {
+    btnDecision.onclick = async (e) => {
+        e.preventDefault();
+        if (!lastUserMessage) {
+            alert("لا توجد رسالة مستخدم لاتخاذ قرار.");
+            return;
+        }
+        const keywords = tokenizeText(lastUserMessage);
+        await saveToMemory('decision', keywords, lastUserMessage, 3);
+    };
+}
 
 // Start
 async function start() {
@@ -185,4 +202,5 @@ async function start() {
     }
 }
 
+// استخدام DOMContentLoaded لضمان تحميل العناصر قبل الربط
 window.addEventListener("DOMContentLoaded", start);
