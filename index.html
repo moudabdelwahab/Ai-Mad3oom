@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>المساعد الافتراضي الذكي</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Supabase CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>المساعد الافتراضي الذكي</h1>
+            <p>نظام ذكاء اصطناعي محلي بالكامل</p>
+        </header>
+
+        <main id="chat-container">
+            <div id="messages-list"></div>
+        </main>
+
+        <footer class="input-area">
+            <div class="action-buttons">
+                <button id="btn-writing-style" title="اعتمد كأسلوبي">اعتمد كأسلوبي</button>
+                <button id="btn-decision" title="قرار نهائي">قرار نهائي</button>
+            </div>
+            <div class="input-group">
+                <input type="text" id="user-input" placeholder="اكتب رسالتك هنا..." autocomplete="off">
+                <button id="send-btn">إرسال</button>
+            </div>
+        </footer>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
