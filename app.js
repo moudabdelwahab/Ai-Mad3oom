@@ -25,6 +25,15 @@ let lastAssistantResponse = "";
 let lastUserMessage = "";
 let messageHistory = [];
 
+// قاعدة بيانات المصطلحات الشائعة (العامية والفصحى)
+const commonKnowledge = [
+    { keywords: ['ازيك', 'كيفك', 'شلونك', 'أخبارك'], response: 'الحمد لله، أنا بخير وبأفضل حال. أنت كيف حالك؟' },
+    { keywords: ['السلام', 'سلام', 'مرحبا', 'أهلا', 'هلا'], response: 'وعليكم السلام ورحمة الله وبركاته! أهلاً بك، كيف يمكنني مساعدتك اليوم؟' },
+    { keywords: ['شكرا', 'مشكور', 'تسلم'], response: 'العفو! أنا هنا دائماً لخدمتك.' },
+    { keywords: ['اسمك', 'مين', 'أنت'], response: 'أنا "مدعوم"، مساعدك الذكي الافتراضي. أتعلم منك وأتطور معك باستمرار.' },
+    { keywords: ['تعمل', 'وظيفتك', 'بتسوي'], response: 'أنا هنا لأساعدك في تنظيم أفكارك، اتخاذ القرارات، والتعلم من أسلوبك الخاص لتوفير أفضل تجربة ممكنة.' }
+];
+
 // 1. Initialize Realtime Subscriptions
 function initRealtime() {
     dbClient
@@ -51,11 +60,24 @@ function tokenizeText(text) {
         .filter(word => word.length > 2);
 }
 
-async function matchMemory(tokens) {
+async function matchMemory(tokens, fullText) {
     try {
         const { data, error } = await dbClient.from('brain_memory').select('*');
         if (error) return [];
-        return data.filter(item => item.trigger_keywords.some(keyword => tokens.includes(keyword.toLowerCase())));
+        
+        return data.filter(item => {
+            // 1. مطابقة الكلمات المفتاحية (Tokens)
+            const keywordMatch = item.trigger_keywords.some(keyword => 
+                tokens.includes(keyword.toLowerCase())
+            );
+            
+            // 2. مطابقة النص الكامل (للحمل الطويلة أو القواعد المتعلمة)
+            const fullTextMatch = item.trigger_keywords.some(keyword => 
+                fullText.toLowerCase().includes(keyword.toLowerCase())
+            );
+            
+            return keywordMatch || fullTextMatch;
+        });
     } catch (e) {
         return [];
     }
@@ -67,7 +89,9 @@ function rankResults(matches) {
 
 async function generateResponse(text) {
     const tokens = tokenizeText(text);
-    const matches = await matchMemory(tokens);
+    
+    // 1. البحث في الذاكرة السحابية (Supabase)
+    const matches = await matchMemory(tokens, text);
     const ranked = rankResults(matches);
 
     let response = "";
@@ -76,16 +100,27 @@ async function generateResponse(text) {
     if (ranked.length > 0) {
         response = ranked[0].response;
         isMatch = true;
-    } else {
-        try {
-            const { data: decisions } = await dbClient.from('brain_memory').select('response').eq('type', 'decision').limit(1);
-            if (decisions && decisions.length > 0) {
-                response = "بناءً على قرارات سابقة: " + decisions[0].response;
-            } else {
+    } 
+    // 2. البحث في قاعدة البيانات المحلية للمصطلحات الشائعة
+    else {
+        const commonMatch = commonKnowledge.find(item => 
+            item.keywords.some(keyword => text.toLowerCase().includes(keyword))
+        );
+        
+        if (commonMatch) {
+            response = commonMatch.response;
+            isMatch = true;
+        } else {
+            try {
+                const { data: decisions } = await dbClient.from('brain_memory').select('response').eq('type', 'decision').limit(1);
+                if (decisions && decisions.length > 0) {
+                    response = "بناءً على قرارات سابقة: " + decisions[0].response;
+                } else {
+                    response = "لم أتعلم هذا بعد. يمكنك تعليمي.";
+                }
+            } catch (e) {
                 response = "لم أتعلم هذا بعد. يمكنك تعليمي.";
             }
-        } catch (e) {
-            response = "لم أتعلم هذا بعد. يمكنك تعليمي.";
         }
     }
 
@@ -163,6 +198,25 @@ async function handleUserMessage(text) {
 
     typingIndicator.classList.remove('hidden');
     messagesList.scrollTop = messagesList.scrollHeight;
+
+    // فحص ما إذا كانت الرسالة أمراً تعليمياً شرطياً
+    const learningPattern = /^(?:لما|لو|إذا|عندما)\s+(?:أقولك|قلتلك|أقول|قلت)\s+(.+?)\s+(?:رد|قول|جاوب|أجب)\s+(?:بـ|ب|بأن)\s+(.+)$/i;
+    const match = text.match(learningPattern);
+
+    if (match) {
+        const trigger = match[1].trim();
+        const response = match[2].trim();
+        const keywords = tokenizeText(trigger);
+        
+        setTimeout(async () => {
+            await saveToMemory('learned_rule', keywords, response, 5);
+            const confirmation = `فهمت! من الآن فصاعداً، لما تقول "${trigger}" هرد بـ "${response}".`;
+            displayMessage({ role: 'assistant', content: confirmation });
+            await saveMessage('assistant', confirmation);
+            showNotification("تم تعلم قاعدة جديدة بنجاح!", "success");
+        }, 800);
+        return;
+    }
 
     setTimeout(async () => {
         const response = await generateResponse(text);
