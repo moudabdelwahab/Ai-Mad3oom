@@ -66,18 +66,33 @@ async function matchMemory(tokens, fullText) {
         if (error) return [];
         
         return data.filter(item => {
-            // 1. مطابقة الكلمات المفتاحية (Tokens)
-            const keywordMatch = item.trigger_keywords.some(keyword => 
-                tokens.includes(keyword.toLowerCase())
-            );
+            const lowerKeywords = item.trigger_keywords.map(k => k.toLowerCase());
             
-            // 2. مطابقة النص الكامل (للحمل الطويلة أو القواعد المتعلمة)
-            const fullTextMatch = item.trigger_keywords.some(keyword => 
-                fullText.toLowerCase().includes(keyword.toLowerCase())
-            );
+            // 1. مطابقة دقيقة للكلمات المفتاحية
+            const keywordMatch = lowerKeywords.some(keyword => tokens.includes(keyword));
             
-            return keywordMatch || fullTextMatch;
+            // 2. مطابقة النص الكامل
+            const fullTextMatch = lowerKeywords.some(keyword => fullText.toLowerCase().includes(keyword));
+            
+            // 3. مطابقة ذكية (إذا كان النص يحتوي على أغلب الكلمات المفتاحية)
+            const intersection = lowerKeywords.filter(k => tokens.includes(k));
+            const smartMatch = intersection.length >= (lowerKeywords.length * 0.7);
+            
+            return keywordMatch || fullTextMatch || smartMatch;
         });
+    } catch (e) {
+        return [];
+    }
+}
+
+async function searchPartialMemory(tokens) {
+    try {
+        const { data } = await dbClient.from('brain_memory').select('*');
+        if (!data) return [];
+        // البحث عن أي تطابق ولو بكلمة واحدة مهمة
+        return data.filter(item => 
+            item.trigger_keywords.some(keyword => tokens.includes(keyword.toLowerCase()))
+        ).sort((a, b) => b.weight - a.weight);
     } catch (e) {
         return [];
     }
@@ -89,37 +104,51 @@ function rankResults(matches) {
 
 async function generateResponse(text) {
     const tokens = tokenizeText(text);
+    const lowerText = text.toLowerCase();
     
-    // 1. البحث في الذاكرة السحابية (Supabase)
+    // 1. البحث في الذاكرة السحابية (Supabase) مع دعم الذاكرة المترابطة
     const matches = await matchMemory(tokens, text);
     const ranked = rankResults(matches);
 
     let response = "";
     let isMatch = false;
+    let memoryContext = "";
 
     if (ranked.length > 0) {
-        response = ranked[0].response;
+        // إذا وجدنا أكثر من تطابق، نحاول ربطهم (الذاكرة الذكية)
+        if (ranked.length > 1) {
+            memoryContext = `أتذكر أننا تحدثنا عن أمور مشابهة مثل (${ranked.slice(1, 3).map(m => m.trigger_keywords[0]).join('، ')}). `;
+        }
+        response = memoryContext + ranked[0].response;
         isMatch = true;
     } 
     // 2. البحث في قاعدة البيانات المحلية للمصطلحات الشائعة
     else {
         const commonMatch = commonKnowledge.find(item => 
-            item.keywords.some(keyword => text.toLowerCase().includes(keyword))
+            item.keywords.some(keyword => lowerText.includes(keyword))
         );
         
         if (commonMatch) {
             response = commonMatch.response;
             isMatch = true;
         } else {
-            try {
-                const { data: decisions } = await dbClient.from('brain_memory').select('response').eq('type', 'decision').limit(1);
-                if (decisions && decisions.length > 0) {
-                    response = "بناءً على قرارات سابقة: " + decisions[0].response;
-                } else {
+            // 3. محرك الاستنتاج الذكي (Inference Engine)
+            // محاولة استنتاج الرد من خلال البحث عن كلمات مفتاحية جزئية في كل الذاكرة
+            const partialMatches = await searchPartialMemory(tokens);
+            if (partialMatches.length > 0) {
+                response = `ليس لدي إجابة مباشرة، ولكن بناءً على ما تعلمته عن "${partialMatches[0].trigger_keywords[0]}"، قد يكون الرد هو: ${partialMatches[0].response}`;
+                isMatch = true;
+            } else {
+                try {
+                    const { data: decisions } = await dbClient.from('brain_memory').select('response').eq('type', 'decision').limit(1);
+                    if (decisions && decisions.length > 0) {
+                        response = "بناءً على قرارات سابقة اتخذناها: " + decisions[0].response;
+                    } else {
+                        response = "لم أتعلم هذا بعد. يمكنك تعليمي باستخدام صيغة (لما أقول كذا رد بكذا).";
+                    }
+                } catch (e) {
                     response = "لم أتعلم هذا بعد. يمكنك تعليمي.";
                 }
-            } catch (e) {
-                response = "لم أتعلم هذا بعد. يمكنك تعليمي.";
             }
         }
     }
