@@ -10,7 +10,7 @@ const engine = new CognitiveGrowthEngine(supabase);
 // DOM Elements
 const messagesList = document.getElementById('messages-list');
 const userInput = document.getElementById('user-input');
-const sendBtn = document.getElementById('send-btn');
+const chatForm = document.getElementById('chat-form');
 const btnWritingStyle = document.getElementById('btn-writing-style');
 const btnDecision = document.getElementById('btn-decision');
 const typingIndicator = document.getElementById('typing-indicator');
@@ -132,11 +132,7 @@ function displayMessage(msg) {
     }
 }
 
-async function handleSend() {
-    const text = userInput.value.trim();
-    if (!text) return;
-
-    userInput.value = "";
+async function handleUserMessage(text) {
     await saveMessage('user', text);
 
     typingIndicator.classList.remove('hidden');
@@ -149,8 +145,14 @@ async function handleSend() {
 }
 
 // 5. Event Listeners
-sendBtn.addEventListener('click', handleSend);
-userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSend(); });
+chatForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = userInput.value.trim();
+    if (!text) return;
+    
+    userInput.value = "";
+    handleUserMessage(text);
+});
 
 btnWritingStyle.addEventListener('click', async () => {
     if (!lastAssistantResponse || !lastUserMessage) return;
@@ -171,6 +173,16 @@ async function start() {
     updateCognitiveUI(engine.aiState);
     
     const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: true });
-    if (data) data.forEach(displayMessage);
+    
+    if (data && data.length > 0) {
+        data.forEach(displayMessage);
+    } else {
+        // رسالة ترحيب تلقائية إذا لم تكن هناك رسائل محفوظة
+        displayMessage({
+            role: 'assistant',
+            content: "أهلاً، أنا مدعوم 👋 جاهز أتعلم معك وأتطور."
+        });
+    }
 }
-start();
+
+window.addEventListener("DOMContentLoaded", start);
