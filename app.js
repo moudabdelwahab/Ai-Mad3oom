@@ -2,7 +2,8 @@
 const SUPABASE_URL = 'https://cwolpcfqyyrwlbsgezdq.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_t0fNw2UMqWHDy41vVXYwOw_WndpkG_S';
 
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = supabaseClient;
 
 // Initialize Cognitive Engine
 const engine = new CognitiveGrowthEngine(supabase);
@@ -101,7 +102,6 @@ async function saveMessage(role, content) {
 
 async function saveToMemory(type, trigger_keywords, response, weight) {
     await supabase.from('brain_memory').insert([{ type, trigger_keywords, response, weight }]);
-    alert('تم الحفظ في الذاكرة بنجاح!');
 }
 
 function updateCognitiveUI(state) {
@@ -147,40 +147,53 @@ async function handleUserMessage(text) {
 // 5. Event Listeners
 // استخدام مستمع واحد للفورم لضمان منع التحديث التلقائي
 if (chatForm) {
-    chatForm.onsubmit = (e) => {
+    chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const text = userInput.value.trim();
-        if (!text) return false;
+        if (!text) return;
         
         userInput.value = "";
         handleUserMessage(text);
-        return false;
-    };
+    });
 }
 
 // التأكد من ربط الأزرار بشكل صحيح
 if (btnWritingStyle) {
-    btnWritingStyle.onclick = async (e) => {
+    btnWritingStyle.addEventListener('click', async (e) => {
         e.preventDefault();
         if (!lastAssistantResponse || !lastUserMessage) {
-            alert("لا توجد رسائل كافية لاعتماد الأسلوب.");
+            showNotification("لا توجد رسائل كافية لاعتماد الأسلوب.", "error");
             return;
         }
         const keywords = tokenizeText(lastUserMessage);
         await saveToMemory('writing_style', keywords, lastAssistantResponse, 2);
-    };
+        showNotification("تم حفظ أسلوب الكتابة في الذاكرة المعرفية.", "success");
+    });
 }
 
 if (btnDecision) {
-    btnDecision.onclick = async (e) => {
+    btnDecision.addEventListener('click', async (e) => {
         e.preventDefault();
         if (!lastUserMessage) {
-            alert("لا توجد رسالة مستخدم لاتخاذ قرار.");
+            showNotification("لا توجد رسالة مستخدم لاتخاذ قرار.", "error");
             return;
         }
         const keywords = tokenizeText(lastUserMessage);
         await saveToMemory('decision', keywords, lastUserMessage, 3);
-    };
+        showNotification("تم اعتماد هذا القرار كمرجع نهائي.", "success");
+    });
+}
+
+function showNotification(message, type = "info") {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    setTimeout(() => notification.classList.add('show'), 10);
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
 }
 
 // Start
