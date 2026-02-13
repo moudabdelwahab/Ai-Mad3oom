@@ -2,10 +2,7 @@
 const SUPABASE_URL = 'https://cwolpcfqyyrwlbsgezdq.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_t0fNw2UMqWHDy41vVXYwOw_WndpkG_S';
 
-// استخدام اسم فريد لتجنب التعارض مع مكتبة Supabase العالمية (window.supabase)
 const dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
-// Initialize Cognitive Engine
 const engine = new CognitiveGrowthEngine(dbClient);
 
 // DOM Elements
@@ -21,185 +18,106 @@ const aiAgeEl = document.getElementById('ai-age');
 const aiIndependenceEl = document.getElementById('ai-independence');
 const aiModeEl = document.getElementById('ai-mode');
 
-let lastAssistantResponse = "";
-let lastUserMessage = "";
 let messageHistory = [];
 
-// قاعدة بيانات المصطلحات الشائعة (العامية والفصحى)
-const commonKnowledge = [
-    { keywords: ['ازيك', 'كيفك', 'شلونك', 'أخبارك'], response: 'الحمد لله، أنا بخير وبأفضل حال. أنت كيف حالك؟' },
-    { keywords: ['السلام', 'سلام', 'مرحبا', 'أهلا', 'هلا'], response: 'وعليكم السلام ورحمة الله وبركاته! أهلاً بك، كيف يمكنني مساعدتك اليوم؟' },
-    { keywords: ['شكرا', 'مشكور', 'تسلم'], response: 'العفو! أنا هنا دائماً لخدمتك.' },
-    { keywords: ['اسمك', 'مين', 'أنت'], response: 'أنا "مدعوم"، مساعدك الذكي الافتراضي. أتعلم منك وأتطور معك باستمرار.' },
-    { keywords: ['تعمل', 'وظيفتك', 'بتسوي'], response: 'أنا هنا لأساعدك في تنظيم أفكارك، اتخاذ القرارات، والتعلم من أسلوبك الخاص لتوفير أفضل تجربة ممكنة.' }
-];
-
-// 1. Initialize Realtime Subscriptions
+// 1. Initialize Realtime
 function initRealtime() {
-    dbClient
-        .channel('public:messages')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-            displayMessage(payload.new);
-        })
-        .subscribe();
+    dbClient.channel('public:messages').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        displayMessage(payload.new);
+    }).subscribe();
 
-    dbClient
-        .channel('public:ai_state')
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ai_state' }, payload => {
-            updateCognitiveUI(payload.new);
-        })
-        .subscribe();
+    dbClient.channel('public:ai_state').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ai_state' }, payload => {
+        updateCognitiveUI(payload.new);
+    }).subscribe();
 }
 
-// 2. Text Processing Functions
+// 2. Text Processing
 function tokenizeText(text) {
     if (!text) return [];
-    return text.toLowerCase()
-        .replace(/[.,!?;:]/g, "")
-        .split(/\s+/)
-        .filter(word => word.length > 2);
+    return text.toLowerCase().replace(/[.,!?;:]/g, "").split(/\s+/).filter(word => word.length > 2);
 }
 
 async function matchMemory(tokens, fullText) {
     try {
-        const { data, error } = await dbClient.from('brain_memory').select('*');
+        const { data, error } = await dbClient.from('brain_memory').select('*').order('weight', { ascending: false });
         if (error) return [];
         
         return data.filter(item => {
             const lowerKeywords = item.trigger_keywords.map(k => k.toLowerCase());
-            
-            // 1. مطابقة دقيقة للكلمات المفتاحية
             const keywordMatch = lowerKeywords.some(keyword => tokens.includes(keyword));
-            
-            // 2. مطابقة النص الكامل
             const fullTextMatch = lowerKeywords.some(keyword => fullText.toLowerCase().includes(keyword));
-            
-            // 3. مطابقة ذكية (إذا كان النص يحتوي على أغلب الكلمات المفتاحية)
-            const intersection = lowerKeywords.filter(k => tokens.includes(k));
-            const smartMatch = intersection.length >= (lowerKeywords.length * 0.7);
-            
-            return keywordMatch || fullTextMatch || smartMatch;
+            return keywordMatch || fullTextMatch;
         });
-    } catch (e) {
-        return [];
-    }
+    } catch (e) { return []; }
 }
 
-async function searchPartialMemory(tokens) {
-    try {
-        const { data } = await dbClient.from('brain_memory').select('*');
-        if (!data) return [];
-        // البحث عن أي تطابق ولو بكلمة واحدة مهمة
-        return data.filter(item => 
-            item.trigger_keywords.some(keyword => tokens.includes(keyword.toLowerCase()))
-        ).sort((a, b) => b.weight - a.weight);
-    } catch (e) {
-        return [];
-    }
-}
-
-function rankResults(matches) {
-    return matches.sort((a, b) => b.weight - a.weight);
-}
-
+// 3. Response Generation (ثالثاً: ربط Personality بالردود)
 async function generateResponse(text) {
     const tokens = tokenizeText(text);
-    const lowerText = text.toLowerCase();
-    
-    // 1. البحث في الذاكرة السحابية (Supabase) مع دعم الذاكرة المترابطة
     const matches = await matchMemory(tokens, text);
-    const ranked = rankResults(matches);
-
+    
     let response = "";
     let isMatch = false;
-    let memoryContext = "";
+    let matchedMemoryId = null;
 
-    if (ranked.length > 0) {
-        // إذا وجدنا أكثر من تطابق، نحاول ربطهم (الذاكرة الذكية)
-        if (ranked.length > 1) {
-            memoryContext = `أتذكر أننا تحدثنا عن أمور مشابهة مثل (${ranked.slice(1, 3).map(m => m.trigger_keywords[0]).join('، ')}). `;
-        }
-        response = memoryContext + ranked[0].response;
+    if (matches.length > 0) {
         isMatch = true;
-    } 
-    // 2. البحث في قاعدة البيانات المحلية للمصطلحات الشائعة
-    else {
-        const commonMatch = commonKnowledge.find(item => 
-            item.keywords.some(keyword => lowerText.includes(keyword))
-        );
+        matchedMemoryId = matches[0].id;
         
-        if (commonMatch) {
-            response = commonMatch.response;
-            isMatch = true;
-        } else {
-            // 3. محرك الاستنتاج الذكي (Inference Engine)
-            // محاولة استنتاج الرد من خلال البحث عن كلمات مفتاحية جزئية في كل الذاكرة
-            const partialMatches = await searchPartialMemory(tokens);
-            if (partialMatches.length > 0) {
-                response = `ليس لدي إجابة مباشرة، ولكن بناءً على ما تعلمته عن "${partialMatches[0].trigger_keywords[0]}"، قد يكون الرد هو: ${partialMatches[0].response}`;
-                isMatch = true;
-            } else {
-                try {
-                    const { data: decisions } = await dbClient.from('brain_memory').select('response').eq('type', 'decision').limit(1);
-                    if (decisions && decisions.length > 0) {
-                        response = "بناءً على قرارات سابقة اتخذناها: " + decisions[0].response;
-                    } else {
-                        response = "لم أتعلم هذا بعد. يمكنك تعليمي باستخدام صيغة (لما أقول كذا رد بكذا).";
-                    }
-                } catch (e) {
-                    response = "لم أتعلم هذا بعد. يمكنك تعليمي.";
-                }
-            }
-        }
+        // خامساً: Associative Linking
+        response = engine.formatAssociativeResponse(matches);
+    } else {
+        response = "لم أتعلم هذا النمط بعد. كيف تريدني أن أتعامل مع هذا الموقف استراتيجياً؟";
     }
 
-    // Cognitive Layer: Check for Independence/Intervention
-    if (engine && engine.shouldIntervene && engine.shouldIntervene(text, response)) {
-        const interventionPrefix = engine.currentMode === 'strategic' 
-            ? "بصفتي مساعدك الاستراتيجي، أرى خياراً أفضل: " 
-            : "هل فكرت في هذا البديل؟ ";
-        response = `<span class="intervention-msg">${interventionPrefix}</span>` + response;
+    // سابعاً: Intervention Logic
+    if (engine.shouldIntervene(text)) {
+        const intervention = engine.getIntervention(text);
+        response = `<div class="intervention-box">⚠️ <strong>تدخل استراتيجي:</strong> ${intervention}</div>\n${response}`;
     }
 
-    // Evolve AI based on interaction success
-    if (engine && engine.evolveAI) {
-        await engine.evolveAI(isMatch).catch(console.error);
+    // ثالثاً: تأثير Personality على أسلوب الرد
+    response = applyPersonalityStyle(response);
+
+    // Evolve AI & Update Memory
+    if (isMatch && matchedMemoryId) {
+        await engine.updateMemoryWeight(matchedMemoryId, true);
     }
+    await engine.evolveAI(isMatch);
     
     return response;
 }
 
-// 3. Database Operations
-async function saveMessage(role, content) {
-    try {
-        const { error } = await dbClient.from('messages').insert([{ role, content }]);
-        if (error) throw error;
-    } catch (err) {
-        console.error("Error saving message to Supabase:", err);
+function applyPersonalityStyle(text) {
+    if (!engine.userModel) return text;
+    
+    const { intelligence_score } = engine.aiState;
+    const { long_term_focus, risk_profile } = engine.userModel;
+
+    let styledText = text;
+
+    // intelligence_score يؤثر على عمق الرد
+    if (intelligence_score > 5) {
+        styledText += "\n\n<small>تحليل معمق: تم ربط هذه الاستجابة بأنماط سلوكك المسجلة لضمان الكفاءة المعرفية.</small>";
     }
-}
 
-async function saveToMemory(type, trigger_keywords, response, weight) {
-    try {
-        await dbClient.from('brain_memory').insert([{ type, trigger_keywords, response, weight }]);
-    } catch (e) {
-        console.error("Error saving to memory:", e);
+    // long_term_focus يؤثر على ربط القرار بالرؤية البعيدة
+    if (long_term_focus > 0.7) {
+        styledText = "بناءً على رؤيتك طويلة المدى: " + styledText;
     }
+
+    // risk_profile يؤثر على اقتراح المخاطرة
+    if (risk_profile > 0.7 && !text.includes('مخاطرة')) {
+        styledText += "\n\nملاحظة: هذا الخيار يدعم ميلك الحالي للمغامرة المحسوبة.";
+    }
+
+    return styledText;
 }
 
-function updateCognitiveUI(state) {
-    if (!state) return;
-    if (aiAgeEl) aiAgeEl.textContent = state.age_level || 1;
-    if (aiIndependenceEl) aiIndependenceEl.textContent = Math.round((state.independence_score || 0) * 100) + "%";
-    if (aiModeEl) aiModeEl.textContent = (state.independence_score > 0.6) ? "Strategic" : "Support";
-}
-
-// 4. UI Functions
+// 4. UI & Core Functions
 function displayMessage(msg) {
-    // منع تكرار الرسائل
     const existingMessages = Array.from(messagesList.querySelectorAll('.message'));
-    const isDuplicate = existingMessages.some(el => el.innerHTML === msg.content && el.classList.contains(msg.role));
-    if (isDuplicate) return;
+    if (existingMessages.some(el => el.innerHTML === msg.content && el.classList.contains(msg.role))) return;
 
     if (msg.role === 'assistant') typingIndicator.classList.add('hidden');
 
@@ -209,26 +127,20 @@ function displayMessage(msg) {
     messagesList.appendChild(div);
     messagesList.scrollTop = messagesList.scrollHeight;
     
-    if (msg.role === 'assistant') {
-        lastAssistantResponse = msg.content;
-    } else {
-        lastUserMessage = msg.content;
+    if (msg.role === 'user') {
         messageHistory.push(msg);
-        if (messageHistory.length > 50) messageHistory.shift();
-        if (engine && engine.aiState && messageHistory.length % 5 === 0) {
-            engine.analyzeUserBehavior(messageHistory).catch(console.error);
-        }
+        if (messageHistory.length > 20) messageHistory.shift();
+        engine.analyzeUserBehavior(messageHistory).catch(console.error);
     }
 }
 
 async function handleUserMessage(text) {
     displayMessage({ role: 'user', content: text });
-    await saveMessage('user', text);
+    await dbClient.from('messages').insert([{ role: 'user', content: text }]);
 
     typingIndicator.classList.remove('hidden');
-    messagesList.scrollTop = messagesList.scrollHeight;
-
-    // فحص ما إذا كانت الرسالة أمراً تعليمياً شرطياً
+    
+    // Learning Pattern
     const learningPattern = /^(?:لما|لو|إذا|عندما)\s+(?:أقولك|قلتلك|أقول|قلت)\s+(.+?)\s+(?:رد|قول|جاوب|أجب)\s+(?:بـ|ب|بأن)\s+(.+)$/i;
     const match = text.match(learningPattern);
 
@@ -238,11 +150,10 @@ async function handleUserMessage(text) {
         const keywords = tokenizeText(trigger);
         
         setTimeout(async () => {
-            await saveToMemory('learned_rule', keywords, response, 5);
-            const confirmation = `فهمت! من الآن فصاعداً، لما تقول "${trigger}" هرد بـ "${response}".`;
+            await dbClient.from('brain_memory').insert([{ type: 'learned_rule', trigger_keywords: keywords, response, weight: 1.0 }]);
+            const confirmation = `تم استيعاب القاعدة المعرفية: عند رصد "${trigger}" سيتم تفعيل الاستجابة الاستراتيجية المحددة.`;
             displayMessage({ role: 'assistant', content: confirmation });
-            await saveMessage('assistant', confirmation);
-            showNotification("تم تعلم قاعدة جديدة بنجاح!", "success");
+            await dbClient.from('messages').insert([{ role: 'assistant', content: confirmation }]);
         }, 800);
         return;
     }
@@ -250,11 +161,18 @@ async function handleUserMessage(text) {
     setTimeout(async () => {
         const response = await generateResponse(text);
         displayMessage({ role: 'assistant', content: response });
-        await saveMessage('assistant', response);
+        await dbClient.from('messages').insert([{ role: 'assistant', content: response }]);
     }, 800);
 }
 
-// 5. Event Listeners
+function updateCognitiveUI(state) {
+    if (!state) return;
+    if (aiAgeEl) aiAgeEl.textContent = state.age_level || 1;
+    if (aiIndependenceEl) aiIndependenceEl.textContent = Math.round((state.independence_score || 0) * 100) + "%";
+    if (aiModeEl) aiModeEl.textContent = (state.independence_score > 0.6) ? "Strategic" : "Support";
+}
+
+// Event Listeners
 if (chatForm) {
     chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -265,72 +183,17 @@ if (chatForm) {
     });
 }
 
-if (btnWritingStyle) {
-    btnWritingStyle.addEventListener('click', async (e) => {
-        e.preventDefault();
-        if (!lastAssistantResponse || !lastUserMessage) {
-            showNotification("لا توجد رسائل كافية لاعتماد الأسلوب.", "error");
-            return;
-        }
-        const keywords = tokenizeText(lastUserMessage);
-        await saveToMemory('writing_style', keywords, lastAssistantResponse, 2);
-        showNotification("تم حفظ أسلوب الكتابة في الذاكرة المعرفية.", "success");
-    });
-}
-
-if (btnDecision) {
-    btnDecision.addEventListener('click', async (e) => {
-        e.preventDefault();
-        if (!lastUserMessage) {
-            showNotification("لا توجد رسالة مستخدم لاتخاذ قرار.", "error");
-            return;
-        }
-        const keywords = tokenizeText(lastUserMessage);
-        await saveToMemory('decision', keywords, lastUserMessage, 3);
-        showNotification("تم اعتماد هذا القرار كمرجع نهائي.", "success");
-    });
-}
-
-function showNotification(message, type = "info") {
-    const notification = document.createElement('div');
-    notification.className = `notification ${type}`;
-    notification.textContent = message;
-    document.body.appendChild(notification);
-    setTimeout(() => notification.classList.add('show'), 10);
-    setTimeout(() => {
-        notification.classList.remove('show');
-        setTimeout(() => notification.remove(), 300);
-    }, 3000);
-}
-
-// Start
 async function start() {
     try {
-        if (engine && engine.initialize) {
-            await engine.initialize();
-            if (engine.aiState) updateCognitiveUI(engine.aiState);
-        }
+        await engine.initialize();
+        if (engine.aiState) updateCognitiveUI(engine.aiState);
         initRealtime();
         
-        const { data, error } = await dbClient.from('messages').select('*').order('created_at', { ascending: true });
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-            data.forEach(displayMessage);
-        } else {
-            showWelcomeMessage();
-        }
+        const { data } = await dbClient.from('messages').select('*').order('created_at', { ascending: true }).limit(50);
+        if (data) data.forEach(displayMessage);
     } catch (err) {
         console.error("Initialization error:", err);
-        showWelcomeMessage();
     }
-}
-
-function showWelcomeMessage() {
-    displayMessage({
-        role: 'assistant',
-        content: "أهلاً، أنا مدعوم 👋 جاهز أتعلم معك وأتطور."
-    });
 }
 
 window.addEventListener("DOMContentLoaded", start);

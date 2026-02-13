@@ -359,3 +359,34 @@ input[type="text"] {
     .cognitive-stats { gap: 0.5rem; }
     .stat-item { min-width: 60px; padding: 0.4rem; }
 }
+
+/* Advanced Cognitive UI Styles */
+.associative-link {
+    margin-top: 12px;
+    padding: 10px;
+    background: rgba(139, 92, 246, 0.1);
+    border-radius: 12px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    border: 1px dashed var(--primary);
+}
+
+.intervention-box {
+    background: rgba(236, 72, 153, 0.1);
+    border-right: 4px solid var(--secondary);
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 0.95rem;
+}
+
+.intervention-box strong {
+    color: var(--secondary);
+}
+
+small {
+    display: block;
+    margin-top: 8px;
+    opacity: 0.7;
+    font-size: 0.75rem;
+}
