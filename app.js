@@ -52,17 +52,17 @@ function createDecisionToolbar(messageText) {
     toolbar.className = 'decision-toolbar';
     
     const tools = [
-        { label: '🔍 تحليل قراري', action: 'analyze' },
-        { label: '⚖️ اعترض عليا', action: 'object' },
-        { label: '🏁 اعتماد كخطة', action: 'goal' },
-        { label: '🧠 اربط بالسجل', action: 'link' },
-        { label: '📊 قيّم نمطي', action: 'pattern' }
+        { label: 'تحليل', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>', action: 'analyze' },
+        { label: 'اعتراض', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>', action: 'object' },
+        { label: 'هدف', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>', action: 'goal' },
+        { label: 'سجل', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="9"></circle></svg>', action: 'link' },
+        { label: 'نمط', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>', action: 'pattern' }
     ];
 
     tools.forEach(tool => {
         const btn = document.createElement('button');
         btn.className = 'tool-btn';
-        btn.innerText = tool.label;
+        btn.innerHTML = `${tool.icon}<span>${tool.label}</span>`;
         btn.onclick = async () => {
             btn.disabled = true;
             await handleToolAction(tool.action, messageText);
