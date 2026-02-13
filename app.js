@@ -7,6 +7,39 @@ const engine = new CognitiveGrowthEngine(dbClient);
 
 // DOM Elements
 const messagesList = document.getElementById('messages-list');
+const themeToggle = document.getElementById('theme-toggle');
+const sunIcon = document.getElementById('sun-icon');
+const moonIcon = document.getElementById('moon-icon');
+
+// Theme Logic
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcons(savedTheme);
+}
+
+function toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeIcons(newTheme);
+}
+
+function updateThemeIcons(theme) {
+    if (theme === 'dark') {
+        sunIcon.classList.add('hidden');
+        moonIcon.classList.remove('hidden');
+    } else {
+        sunIcon.classList.remove('hidden');
+        moonIcon.classList.add('hidden');
+    }
+}
+
+if (themeToggle) {
+    themeToggle.addEventListener('click', toggleTheme);
+}
+
 const userInput = document.getElementById('user-input');
 const chatForm = document.getElementById('chat-form');
 const btnWritingStyle = document.getElementById('btn-writing-style');
@@ -185,6 +218,7 @@ if (chatForm) {
 
 async function start() {
     try {
+        initTheme();
         await engine.initialize();
         if (engine.aiState) updateCognitiveUI(engine.aiState);
         initRealtime();
