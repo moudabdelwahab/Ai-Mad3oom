@@ -1,151 +1,182 @@
 // Supabase Configuration
 const SUPABASE_URL = 'https://cwolpcfqyyrwlbsgezdq.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_t0fNw2UMqWHDy41vVXYwOw_WndpkG_S';
+const GEMINI_KEY = 'AIzaSyAt_r2uKxYft-JvfSHmxe-aR6iFWsJSXhk';
 
+// Initialize Supabase Client
 const dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Initialize Cognitive Engine
 const engine = new CognitiveGrowthEngine(dbClient);
 
 // DOM Elements
 const messagesList = document.getElementById('messages-list');
-const themeToggle = document.getElementById('theme-toggle');
-const sunIcon = document.getElementById('sun-icon');
-const moonIcon = document.getElementById('moon-icon');
 const userInput = document.getElementById('user-input');
 const chatForm = document.getElementById('chat-form');
+const btnWritingStyle = document.getElementById('btn-writing-style');
+const btnDecision = document.getElementById('btn-decision');
 const typingIndicator = document.getElementById('typing-indicator');
+
+// Cognitive UI Elements
 const aiAgeEl = document.getElementById('ai-age');
 const aiIndependenceEl = document.getElementById('ai-independence');
 const aiModeEl = document.getElementById('ai-mode');
 
+let lastAssistantResponse = "";
+let lastUserMessage = "";
 let messageHistory = [];
 
-// 1. Initialize Theme
-function initTheme() {
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    updateThemeIcons(savedTheme);
-}
+// Common Knowledge Base
+const commonKnowledge = [
+    { keywords: ['ازيك', 'كيفك', 'شلونك', 'أخبارك'], response: 'الحمد لله، أنا بخير وبأفضل حال. أنت كيف حالك؟' },
+    { keywords: ['السلام', 'سلام', 'مرحبا', 'أهلا', 'هلا'], response: 'وعليكم السلام ورحمة الله وبركاته! أهلاً بك، كيف يمكنني مساعدتك اليوم؟' },
+    { keywords: ['شكرا', 'مشكور', 'تسلم'], response: 'العفو! أنا هنا دائماً لخدمتك.' },
+    { keywords: ['اسمك', 'مين', 'أنت'], response: 'أنا "مدعوم"، مساعدك الذكي الافتراضي. أتعلم منك وأتطور معك باستمرار.' }
+];
 
-function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('theme', newTheme);
-    updateThemeIcons(newTheme);
-}
-
-function updateThemeIcons(theme) {
-    if (theme === 'dark') {
-        sunIcon?.classList.add('hidden');
-        moonIcon?.classList.remove('hidden');
-    } else {
-        sunIcon?.classList.remove('hidden');
-        moonIcon?.classList.add('hidden');
-    }
-}
-
-if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
-
-// 2. Decision Toolbar Component
-function createDecisionToolbar(messageText) {
-    const toolbar = document.createElement('div');
-    toolbar.className = 'decision-toolbar';
+// 1. Cognitive Context Builder
+async function buildCognitiveContext(text, relevantMemories) {
+    const userModel = engine.userModel || { decisiveness_score: 0.5, consistency_score: 0.5 };
+    const aiState = engine.aiState || { age_level: 1, independence_score: 0 };
     
-    const tools = [
-        { label: 'تحليل', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>', action: 'analyze' },
-        { label: 'اعتراض', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>', action: 'object' },
-        { label: 'هدف', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>', action: 'goal' },
-        { label: 'سجل', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="9"></circle></svg>', action: 'link' },
-        { label: 'نمط', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>', action: 'pattern' }
-    ];
-
-    tools.forEach(tool => {
-        const btn = document.createElement('button');
-        btn.className = 'tool-btn';
-        btn.innerHTML = `${tool.icon}<span>${tool.label}</span>`;
-        btn.onclick = async () => {
-            btn.disabled = true;
-            await handleToolAction(tool.action, messageText);
-            btn.disabled = false;
-        };
-        toolbar.appendChild(btn);
-    });
-
-    return toolbar;
-}
-
-async function handleToolAction(action, text) {
-    typingIndicator.classList.remove('hidden');
-    let result = "";
-
-    switch(action) {
-        case 'analyze': result = await engine.analyzeDecision(text); break;
-        case 'object': result = await engine.objectToDecision(text); break;
-        case 'goal': result = await engine.convertToGoal(text); break;
-        case 'link': result = await engine.linkToHistory(text); break;
-        case 'pattern': result = engine.getPatternSnapshot(); break;
-    }
-
-    setTimeout(async () => {
-        displayMessage({ role: 'assistant', content: `<div class="decision-result"><strong>[نظام التشغيل القراري]:</strong><br>${result}</div>` });
-        await dbClient.from('messages').insert([{ role: 'assistant', content: result }]);
-        typingIndicator.classList.add('hidden');
-    }, 600);
-}
-
-// 3. Core Functions
-function displayMessage(msg) {
-    const div = document.createElement('div');
-    div.className = `message ${msg.role}`;
-    div.innerHTML = msg.content;
+    let context = `
+    أنت "مدعوم"، مساعد ذكي بنظام إدراكي هجين.
     
-    const wrapper = document.createElement('div');
-    wrapper.className = 'message-wrapper';
-    wrapper.appendChild(div);
-
-    if (msg.role === 'user') {
-        wrapper.appendChild(createDecisionToolbar(msg.content));
-        messageHistory.push(msg);
-        if (messageHistory.length > 20) messageHistory.shift();
-        engine.analyzeUserBehavior(messageHistory).catch(console.error);
-    } else {
-        typingIndicator.classList.add('hidden');
-    }
-
-    messagesList.appendChild(wrapper);
-    messagesList.scrollTop = messagesList.scrollHeight;
+    [سياق المستخدم الحالي]:
+    - مستوى الحسم: ${userModel.decisiveness_score}
+    - مستوى الاتساق: ${userModel.consistency_score}
+    
+    [حالتك الإدراكية]:
+    - العمر المعرفي: ${aiState.age_level}
+    - مستوى الاستقلالية: ${aiState.independence_score}
+    - الوضع الحالي: ${engine.currentMode}
+    
+    [الذكريات المرتبطة المسترجعة]:
+    ${relevantMemories.map(m => `- ${m.trigger_keywords.join(', ')}: ${m.response}`).join('\n')}
+    
+    [المهمة]:
+    رد على رسالة المستخدم بناءً على هذا السياق والذكريات. إذا كانت هناك ذكريات مرتبطة، استخدمها لتعزيز الرد. إذا لم توجد، استخدم قدراتك التحليلية لتقديم أفضل مساعدة ممكنة بلهجة عربية ودودة وذكية.
+    
+    رسالة المستخدم: "${text}"
+    `;
+    return context;
 }
 
-async function generateResponse(text) {
-    const tokens = text.toLowerCase().split(/\s+/);
-    const { data: matches } = await dbClient.from('brain_memory').select('*').order('weight', { ascending: false });
+// 2. Smart Routing & Gemini Integration
+async function callGeminiAI(prompt, isAnalysis = false) {
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`;
     
-    let response = "لم أتعلم هذا النمط بعد. استخدم شريط الأدوات بالأسفل لتحليل هذا الموقف استراتيجياً.";
-    let isMatch = false;
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }]
+            })
+        });
 
-    if (matches) {
-        const match = matches.find(m => m.trigger_keywords.some(k => text.includes(k)));
-        if (match) {
-            response = match.response;
-            isMatch = true;
+        const data = await response.json();
+        if (!data.candidates || !data.candidates[0]) throw new Error("Gemini API Error");
+        
+        const aiResponse = data.candidates[0].content.parts[0].text;
+        
+        // 3. Response Learning System (Async)
+        if (!isAnalysis) {
+            analyzeAndLearnFromResponse(aiResponse).catch(console.error);
         }
+        
+        return aiResponse;
+    } catch (err) {
+        console.error("Gemini Call Failed:", err);
+        throw err;
     }
-
-    await engine.evolveAI(isMatch);
-    return response;
 }
 
-async function handleUserMessage(text) {
-    displayMessage({ role: 'user', content: text });
-    await dbClient.from('messages').insert([{ role: 'user', content: text }]);
-
-    typingIndicator.classList.remove('hidden');
+// 3. Response Learning System
+async function analyzeAndLearnFromResponse(aiResponse) {
+    const analysisPrompt = `
+    حلل الرد التالي واستخرج منه أي (حقائق، قرارات، استراتيجيات، أو أنماط سلوكية) جديدة يمكن تخزينها في الذاكرة.
+    الرد: "${aiResponse}"
     
-    setTimeout(async () => {
-        const response = await generateResponse(text);
-        displayMessage({ role: 'assistant', content: response });
-        await dbClient.from('messages').insert([{ role: 'assistant', content: response }]);
-    }, 800);
+    المطلوب: رد بتنسيق JSON فقط كالتالي:
+    {"knowledge": [{"type": "fact/decision/strategy", "keywords": ["كلمة1", "كلمة2"], "content": "المعلومة المستخرجة"}]}
+    إذا لم تجد شيئاً مفيداً، رد بـ {"knowledge": []}
+    `;
+    
+    try {
+        const rawAnalysis = await callGeminiAI(analysisPrompt, true);
+        const cleanJson = rawAnalysis.replace(/```json|```/g, "").trim();
+        const data = JSON.parse(cleanJson);
+        
+        for (const item of data.knowledge) {
+            const isDuplicate = await checkMemorySimilarity(item.keywords);
+            if (!isDuplicate) {
+                await saveToMemory(item.type, item.keywords, item.content, 2);
+            }
+        }
+    } catch (e) {}
+}
+
+async function checkMemorySimilarity(keywords) {
+    try {
+        const { data } = await dbClient.from('brain_memory').select('trigger_keywords');
+        if (!data) return false;
+        return data.some(m => m.trigger_keywords.some(k => keywords.includes(k)));
+    } catch (e) { return false; }
+}
+
+// 4. Main Response Logic
+async function generateResponse(text) {
+    const tokens = tokenizeText(text);
+    const lowerText = text.toLowerCase();
+    
+    const matches = await matchMemory(tokens, text);
+    const ranked = rankResults(matches);
+
+    if (ranked.length > 0 && ranked[0].weight > 4) {
+        return ranked[0].response;
+    }
+
+    try {
+        const context = await buildCognitiveContext(text, ranked);
+        const response = await callGeminiAI(context);
+        return response;
+    } catch (err) {
+        if (ranked.length > 0) return ranked[0].response;
+        const commonMatch = commonKnowledge.find(item => item.keywords.some(k => lowerText.includes(k)));
+        if (commonMatch) return commonMatch.response;
+        return "أواجه صعوبة في الاتصال بعقلي التحليلي حالياً، ولكن سأحاول تذكر ما تعلمته سابقاً.";
+    }
+}
+
+function tokenizeText(text) {
+    if (!text) return [];
+    return text.toLowerCase().replace(/[.,!?;:]/g, "").split(/\s+/).filter(word => word.length > 2);
+}
+
+async function matchMemory(tokens, fullText) {
+    try {
+        const { data } = await dbClient.from('brain_memory').select('*');
+        if (!data) return [];
+        return data.filter(item => {
+            const lowerKeywords = item.trigger_keywords.map(k => k.toLowerCase());
+            const keywordMatch = lowerKeywords.some(keyword => tokens.includes(keyword));
+            const fullTextMatch = lowerKeywords.some(keyword => fullText.toLowerCase().includes(keyword));
+            return keywordMatch || fullTextMatch;
+        });
+    } catch (e) { return []; }
+}
+
+function rankResults(matches) {
+    return matches.sort((a, b) => b.weight - a.weight);
+}
+
+async function saveMessage(role, content) {
+    try { await dbClient.from('messages').insert([{ role, content }]); } catch (err) {}
+}
+
+async function saveToMemory(type, trigger_keywords, response, weight) {
+    try { await dbClient.from('brain_memory').insert([{ type, trigger_keywords, response, weight }]); } catch (e) {}
 }
 
 function updateCognitiveUI(state) {
@@ -155,7 +186,87 @@ function updateCognitiveUI(state) {
     if (aiModeEl) aiModeEl.textContent = (state.independence_score > 0.6) ? "Strategic" : "Support";
 }
 
-// 4. Start & Events
+function displayMessage(msg) {
+    const existingMessages = Array.from(messagesList.querySelectorAll('.message'));
+    const isDuplicate = existingMessages.some(el => el.innerHTML === msg.content && el.classList.contains(msg.role));
+    if (isDuplicate) return;
+
+    if (msg.role === 'assistant') typingIndicator.classList.add('hidden');
+
+    const div = document.createElement('div');
+    div.className = `message ${msg.role}`;
+    div.innerHTML = msg.content;
+    messagesList.appendChild(div);
+    messagesList.scrollTop = messagesList.scrollHeight;
+    
+    if (msg.role === 'assistant') {
+        lastAssistantResponse = msg.content;
+    } else {
+        lastUserMessage = msg.content;
+        messageHistory.push(msg);
+        if (messageHistory.length > 50) messageHistory.shift();
+    }
+}
+
+async function handleUserMessage(text) {
+    displayMessage({ role: 'user', content: text });
+    await saveMessage('user', text);
+
+    typingIndicator.classList.remove('hidden');
+    messagesList.scrollTop = messagesList.scrollHeight;
+
+    const learningPattern = /^(?:لما|لو|إذا|عندما)\s+(?:أقولك|قلتلك|أقول|قلت)\s+(.+?)\s+(?:رد|قول|جاوب|أجب)\s+(?:بـ|ب|بأن)\s+(.+)$/i;
+    const match = text.match(learningPattern);
+
+    if (match) {
+        const trigger = match[1].trim();
+        const response = match[2].trim();
+        setTimeout(async () => {
+            await saveToMemory('learned_rule', tokenizeText(trigger), response, 10);
+            const confirmation = `فهمت! من الآن فصاعداً، لما تقول "${trigger}" هرد بـ "${response}".`;
+            displayMessage({ role: 'assistant', content: confirmation });
+            await saveMessage('assistant', confirmation);
+            showNotification("تم تعلم قاعدة جديدة!", "success");
+        }, 800);
+        return;
+    }
+
+    setTimeout(async () => {
+        const response = await generateResponse(text);
+        displayMessage({ role: 'assistant', content: response });
+        await saveMessage('assistant', response);
+    }, 800);
+}
+
+function showNotification(message, type = "info") {
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    setTimeout(() => notification.classList.add('show'), 10);
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
+
+async function start() {
+    try {
+        if (engine && engine.initialize) {
+            await engine.initialize();
+            if (engine.aiState) updateCognitiveUI(engine.aiState);
+        }
+        const { data } = await dbClient.from('messages').select('*').order('created_at', { ascending: true });
+        if (data && data.length > 0) {
+            data.forEach(displayMessage);
+        } else {
+            displayMessage({ role: 'assistant', content: "أهلاً، أنا مدعوم 👋 جاهز أتعلم معك وأتطور." });
+        }
+    } catch (err) {
+        displayMessage({ role: 'assistant', content: "أهلاً، أنا مدعوم 👋 جاهز أتعلم معك وأتطور." });
+    }
+}
+
 if (chatForm) {
     chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -164,19 +275,6 @@ if (chatForm) {
         userInput.value = "";
         handleUserMessage(text);
     });
-}
-
-async function start() {
-    try {
-        initTheme();
-        await engine.initialize();
-        if (engine.aiState) updateCognitiveUI(engine.aiState);
-        
-        const { data } = await dbClient.from('messages').select('*').order('created_at', { ascending: true }).limit(50);
-        if (data) data.forEach(displayMessage);
-    } catch (err) {
-        console.error("Init error:", err);
-    }
 }
 
 window.addEventListener("DOMContentLoaded", start);
