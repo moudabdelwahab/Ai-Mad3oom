@@ -10,8 +10,16 @@ const messagesList = document.getElementById('messages-list');
 const themeToggle = document.getElementById('theme-toggle');
 const sunIcon = document.getElementById('sun-icon');
 const moonIcon = document.getElementById('moon-icon');
+const userInput = document.getElementById('user-input');
+const chatForm = document.getElementById('chat-form');
+const typingIndicator = document.getElementById('typing-indicator');
+const aiAgeEl = document.getElementById('ai-age');
+const aiIndependenceEl = document.getElementById('ai-independence');
+const aiModeEl = document.getElementById('ai-mode');
 
-// Theme Logic
+let messageHistory = [];
+
+// 1. Initialize Theme
 function initTheme() {
     const savedTheme = localStorage.getItem('theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -28,143 +36,103 @@ function toggleTheme() {
 
 function updateThemeIcons(theme) {
     if (theme === 'dark') {
-        sunIcon.classList.add('hidden');
-        moonIcon.classList.remove('hidden');
+        sunIcon?.classList.add('hidden');
+        moonIcon?.classList.remove('hidden');
     } else {
-        sunIcon.classList.remove('hidden');
-        moonIcon.classList.add('hidden');
+        sunIcon?.classList.remove('hidden');
+        moonIcon?.classList.add('hidden');
     }
 }
 
-if (themeToggle) {
-    themeToggle.addEventListener('click', toggleTheme);
-}
+if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
 
-const userInput = document.getElementById('user-input');
-const chatForm = document.getElementById('chat-form');
-const btnWritingStyle = document.getElementById('btn-writing-style');
-const btnDecision = document.getElementById('btn-decision');
-const typingIndicator = document.getElementById('typing-indicator');
-
-// Cognitive UI Elements
-const aiAgeEl = document.getElementById('ai-age');
-const aiIndependenceEl = document.getElementById('ai-independence');
-const aiModeEl = document.getElementById('ai-mode');
-
-let messageHistory = [];
-
-// 1. Initialize Realtime
-function initRealtime() {
-    dbClient.channel('public:messages').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
-        displayMessage(payload.new);
-    }).subscribe();
-
-    dbClient.channel('public:ai_state').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ai_state' }, payload => {
-        updateCognitiveUI(payload.new);
-    }).subscribe();
-}
-
-// 2. Text Processing
-function tokenizeText(text) {
-    if (!text) return [];
-    return text.toLowerCase().replace(/[.,!?;:]/g, "").split(/\s+/).filter(word => word.length > 2);
-}
-
-async function matchMemory(tokens, fullText) {
-    try {
-        const { data, error } = await dbClient.from('brain_memory').select('*').order('weight', { ascending: false });
-        if (error) return [];
-        
-        return data.filter(item => {
-            const lowerKeywords = item.trigger_keywords.map(k => k.toLowerCase());
-            const keywordMatch = lowerKeywords.some(keyword => tokens.includes(keyword));
-            const fullTextMatch = lowerKeywords.some(keyword => fullText.toLowerCase().includes(keyword));
-            return keywordMatch || fullTextMatch;
-        });
-    } catch (e) { return []; }
-}
-
-// 3. Response Generation (ثالثاً: ربط Personality بالردود)
-async function generateResponse(text) {
-    const tokens = tokenizeText(text);
-    const matches = await matchMemory(tokens, text);
+// 2. Decision Toolbar Component
+function createDecisionToolbar(messageText) {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'decision-toolbar';
     
-    let response = "";
-    let isMatch = false;
-    let matchedMemoryId = null;
+    const tools = [
+        { label: '🔍 تحليل قراري', action: 'analyze' },
+        { label: '⚖️ اعترض عليا', action: 'object' },
+        { label: '🏁 اعتماد كخطة', action: 'goal' },
+        { label: '🧠 اربط بالسجل', action: 'link' },
+        { label: '📊 قيّم نمطي', action: 'pattern' }
+    ];
 
-    if (matches.length > 0) {
-        isMatch = true;
-        matchedMemoryId = matches[0].id;
-        
-        // خامساً: Associative Linking
-        response = engine.formatAssociativeResponse(matches);
-    } else {
-        response = "لم أتعلم هذا النمط بعد. كيف تريدني أن أتعامل مع هذا الموقف استراتيجياً؟";
-    }
+    tools.forEach(tool => {
+        const btn = document.createElement('button');
+        btn.className = 'tool-btn';
+        btn.innerText = tool.label;
+        btn.onclick = async () => {
+            btn.disabled = true;
+            await handleToolAction(tool.action, messageText);
+            btn.disabled = false;
+        };
+        toolbar.appendChild(btn);
+    });
 
-    // سابعاً: Intervention Logic
-    if (engine.shouldIntervene(text)) {
-        const intervention = engine.getIntervention(text);
-        response = `<div class="intervention-box">⚠️ <strong>تدخل استراتيجي:</strong> ${intervention}</div>\n${response}`;
-    }
-
-    // ثالثاً: تأثير Personality على أسلوب الرد
-    response = applyPersonalityStyle(response);
-
-    // Evolve AI & Update Memory
-    if (isMatch && matchedMemoryId) {
-        await engine.updateMemoryWeight(matchedMemoryId, true);
-    }
-    await engine.evolveAI(isMatch);
-    
-    return response;
+    return toolbar;
 }
 
-function applyPersonalityStyle(text) {
-    if (!engine.userModel) return text;
-    
-    const { intelligence_score } = engine.aiState;
-    const { long_term_focus, risk_profile } = engine.userModel;
+async function handleToolAction(action, text) {
+    typingIndicator.classList.remove('hidden');
+    let result = "";
 
-    let styledText = text;
-
-    // intelligence_score يؤثر على عمق الرد
-    if (intelligence_score > 5) {
-        styledText += "\n\n<small>تحليل معمق: تم ربط هذه الاستجابة بأنماط سلوكك المسجلة لضمان الكفاءة المعرفية.</small>";
+    switch(action) {
+        case 'analyze': result = await engine.analyzeDecision(text); break;
+        case 'object': result = await engine.objectToDecision(text); break;
+        case 'goal': result = await engine.convertToGoal(text); break;
+        case 'link': result = await engine.linkToHistory(text); break;
+        case 'pattern': result = engine.getPatternSnapshot(); break;
     }
 
-    // long_term_focus يؤثر على ربط القرار بالرؤية البعيدة
-    if (long_term_focus > 0.7) {
-        styledText = "بناءً على رؤيتك طويلة المدى: " + styledText;
-    }
-
-    // risk_profile يؤثر على اقتراح المخاطرة
-    if (risk_profile > 0.7 && !text.includes('مخاطرة')) {
-        styledText += "\n\nملاحظة: هذا الخيار يدعم ميلك الحالي للمغامرة المحسوبة.";
-    }
-
-    return styledText;
+    setTimeout(async () => {
+        displayMessage({ role: 'assistant', content: `<div class="decision-result"><strong>[نظام التشغيل القراري]:</strong><br>${result}</div>` });
+        await dbClient.from('messages').insert([{ role: 'assistant', content: result }]);
+        typingIndicator.classList.add('hidden');
+    }, 600);
 }
 
-// 4. UI & Core Functions
+// 3. Core Functions
 function displayMessage(msg) {
-    const existingMessages = Array.from(messagesList.querySelectorAll('.message'));
-    if (existingMessages.some(el => el.innerHTML === msg.content && el.classList.contains(msg.role))) return;
-
-    if (msg.role === 'assistant') typingIndicator.classList.add('hidden');
-
     const div = document.createElement('div');
     div.className = `message ${msg.role}`;
     div.innerHTML = msg.content;
-    messagesList.appendChild(div);
-    messagesList.scrollTop = messagesList.scrollHeight;
     
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message-wrapper';
+    wrapper.appendChild(div);
+
     if (msg.role === 'user') {
+        wrapper.appendChild(createDecisionToolbar(msg.content));
         messageHistory.push(msg);
         if (messageHistory.length > 20) messageHistory.shift();
         engine.analyzeUserBehavior(messageHistory).catch(console.error);
+    } else {
+        typingIndicator.classList.add('hidden');
     }
+
+    messagesList.appendChild(wrapper);
+    messagesList.scrollTop = messagesList.scrollHeight;
+}
+
+async function generateResponse(text) {
+    const tokens = text.toLowerCase().split(/\s+/);
+    const { data: matches } = await dbClient.from('brain_memory').select('*').order('weight', { ascending: false });
+    
+    let response = "لم أتعلم هذا النمط بعد. استخدم شريط الأدوات بالأسفل لتحليل هذا الموقف استراتيجياً.";
+    let isMatch = false;
+
+    if (matches) {
+        const match = matches.find(m => m.trigger_keywords.some(k => text.includes(k)));
+        if (match) {
+            response = match.response;
+            isMatch = true;
+        }
+    }
+
+    await engine.evolveAI(isMatch);
+    return response;
 }
 
 async function handleUserMessage(text) {
@@ -173,24 +141,6 @@ async function handleUserMessage(text) {
 
     typingIndicator.classList.remove('hidden');
     
-    // Learning Pattern
-    const learningPattern = /^(?:لما|لو|إذا|عندما)\s+(?:أقولك|قلتلك|أقول|قلت)\s+(.+?)\s+(?:رد|قول|جاوب|أجب)\s+(?:بـ|ب|بأن)\s+(.+)$/i;
-    const match = text.match(learningPattern);
-
-    if (match) {
-        const trigger = match[1].trim();
-        const response = match[2].trim();
-        const keywords = tokenizeText(trigger);
-        
-        setTimeout(async () => {
-            await dbClient.from('brain_memory').insert([{ type: 'learned_rule', trigger_keywords: keywords, response, weight: 1.0 }]);
-            const confirmation = `تم استيعاب القاعدة المعرفية: عند رصد "${trigger}" سيتم تفعيل الاستجابة الاستراتيجية المحددة.`;
-            displayMessage({ role: 'assistant', content: confirmation });
-            await dbClient.from('messages').insert([{ role: 'assistant', content: confirmation }]);
-        }, 800);
-        return;
-    }
-
     setTimeout(async () => {
         const response = await generateResponse(text);
         displayMessage({ role: 'assistant', content: response });
@@ -205,7 +155,7 @@ function updateCognitiveUI(state) {
     if (aiModeEl) aiModeEl.textContent = (state.independence_score > 0.6) ? "Strategic" : "Support";
 }
 
-// Event Listeners
+// 4. Start & Events
 if (chatForm) {
     chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -221,12 +171,11 @@ async function start() {
         initTheme();
         await engine.initialize();
         if (engine.aiState) updateCognitiveUI(engine.aiState);
-        initRealtime();
         
         const { data } = await dbClient.from('messages').select('*').order('created_at', { ascending: true }).limit(50);
         if (data) data.forEach(displayMessage);
     } catch (err) {
-        console.error("Initialization error:", err);
+        console.error("Init error:", err);
     }
 }
 

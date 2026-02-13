@@ -1,6 +1,6 @@
 /**
- * Cognitive Growth Engine - Ai-Mad3oom
- * المسئول عن تحويل النظام إلى نظام معرفي شخصي متطور
+ * Cognitive Growth Engine - Ai-Mad3oom (Decision OS Version)
+ * المسئول عن تحويل النظام إلى نظام تشغيل قراري متطور
  */
 
 class CognitiveGrowthEngine {
@@ -11,7 +11,6 @@ class CognitiveGrowthEngine {
         this.modes = { SUPPORT: 'support', STRATEGIC: 'strategic' };
         this.currentMode = 'support';
         
-        // Linguistic Signals for Behavioral Analysis
         this.signals = {
             hesitation: ['محتار', 'مش عارف', 'يمكن', 'ممكن', 'متردد', 'شو رأيك', 'ما بعرف'],
             decisiveness: ['قررت', 'خلاص', 'أكيد', 'طبعاً', 'تم', 'انتهى', 'واضح'],
@@ -34,7 +33,6 @@ class CognitiveGrowthEngine {
 
             this.aiState = aiData;
             this.userModel = userData;
-            
             this.currentMode = (this.aiState && this.aiState.independence_score > 0.6) ? this.modes.STRATEGIC : this.modes.SUPPORT;
         } catch (err) {
             console.warn("Cognitive Engine: Using default state.", err);
@@ -43,132 +41,95 @@ class CognitiveGrowthEngine {
                 thinking_style: 'analytical', risk_profile: 0.5, execution_bias: 0.5, 
                 control_drive: 0.5, long_term_focus: 0.5, decisiveness_score: 0.5, consistency_score: 0.5 
             };
-            this.currentMode = this.modes.SUPPORT;
         }
     }
 
-    // أولاً وثانياً: Linguistic Behavior Analyzer & Personality Vector Update
+    // --- Decision OS Functions ---
+
+    // 1️⃣ تحليل قراري
+    async analyzeDecision(text) {
+        const { risk_profile, long_term_focus } = this.userModel;
+        let analysis = "";
+        
+        const riskLevel = text.match(/(مخاطرة|خطر|تجربة|مغامرة)/i) ? "مرتفع" : "منخفض";
+        const impact = long_term_focus > 0.6 ? "استراتيجي بعيد المدى" : "تكتيكي قصير المدى";
+
+        analysis = `تحليل المخاطر: مستوى المخاطرة في هذا القرار يبدو ${riskLevel} بناءً على نمطك (${(risk_profile * 100).toFixed(0)}%).\n`;
+        analysis += `الرؤية: هذا القرار يُصنف كـ ${impact}.\n`;
+        analysis += `بدائل: فكر في "التدرج في التنفيذ" أو "اختبار الفكرة على نطاق ضيق" لتقليل الانحراف عن أهدافك المستدامة.`;
+
+        await this.logEvent('DECISION_ANALYSIS', text, 'User requested decision analysis', 0.5);
+        return analysis;
+    }
+
+    // 2️⃣ اعترض عليا (Devil’s Advocate)
+    async objectToDecision(text) {
+        const objection = `بصفتي المعارض المنطقي (Devil's Advocate): هل فكرت أن هذا القرار قد يستهلك مواردك دون عائد حقيقي؟ التحيز للتنفيذ (Execution Bias) لديك قد يدفعك للاستعجال. ماذا لو فشل الافتراض الأساسي الذي بنيت عليه هذا القرار؟`;
+        await this.logEvent('STRATEGIC_OBJECTION', text, 'System triggered Devil’s Advocate Mode', 0.8);
+        return objection;
+    }
+
+    // 3️⃣ اعتماد كخطة تنفيذ
+    async convertToGoal(text) {
+        try {
+            const { error } = await this.supabase.from('user_goals').insert([{
+                goal_text: text,
+                priority: 'medium',
+                progress: 0
+            }]);
+            if (error) throw error;
+            await this.logEvent('GOAL_CREATED', text, 'Message converted to goal', 0.7);
+            return "تم تحويل الرسالة إلى هدف استراتيجي في سجل الأهداف بنجاح. الأولوية: متوسطة، التقدم: 0%.";
+        } catch (e) {
+            return "حدث خطأ أثناء حفظ الهدف.";
+        }
+    }
+
+    // 4️⃣ اربط بالسجل
+    async linkToHistory(text) {
+        try {
+            const { data: logs } = await this.supabase.from('event_log').select('*').ilike('related_message', `%${text.substring(0, 10)}%`).limit(3);
+            if (logs && logs.length > 0) {
+                return `وجدت أنماطاً مشابهة في السجل. لقد ناقشت أموراً قريبة من هذا في تاريخ ${new Date(logs[0].created_at).toLocaleDateString()}. يبدو أن هذا القرار متكرر أو مرتبط بنمط سابق.`;
+            }
+            return "لم أجد قرارات مشابهة تماماً في السجل القريب، مما يعني أن هذا قد يكون مساراً جديداً لك.";
+        } catch (e) {
+            return "تعذر الوصول للسجل حالياً.";
+        }
+    }
+
+    // 5️⃣ قيّم نمطي
+    getPatternSnapshot() {
+        const { decisiveness_score, risk_profile, long_term_focus } = this.userModel;
+        return `لقطة من نمطك المعرفي:\n- الحسم: ${(decisiveness_score * 100).toFixed(0)}%\n- الميل للمخاطرة: ${(risk_profile * 100).toFixed(0)}%\n- التركيز الاستراتيجي: ${(long_term_focus * 100).toFixed(0)}%`;
+    }
+
+    // --- Core Logic Updates ---
+
     async analyzeUserBehavior(lastMessages) {
         if (!lastMessages || lastMessages.length === 0) return;
-        
         const lastMsg = lastMessages[lastMessages.length - 1].content.toLowerCase();
         let updates = {};
 
-        // تحليل الحسم والتردد
-        if (this.signals.hesitation.some(s => lastMsg.includes(s))) {
-            updates.decisiveness_score = Math.max(0, this.userModel.decisiveness_score - 0.05);
-        } else if (this.signals.decisiveness.some(s => lastMsg.includes(s))) {
-            updates.decisiveness_score = Math.min(1, this.userModel.decisiveness_score + 0.05);
-        }
+        if (this.signals.hesitation.some(s => lastMsg.includes(s))) updates.decisiveness_score = Math.max(0, this.userModel.decisiveness_score - 0.05);
+        else if (this.signals.decisiveness.some(s => lastMsg.includes(s))) updates.decisiveness_score = Math.min(1, this.userModel.decisiveness_score + 0.05);
+        if (this.signals.risk.some(s => lastMsg.includes(s))) updates.risk_profile = Math.min(1, this.userModel.risk_profile + 0.05);
+        if (this.signals.longTerm.some(s => lastMsg.includes(s))) updates.long_term_focus = Math.min(1, this.userModel.long_term_focus + 0.05);
 
-        // تحليل الميل للمخاطرة
-        if (this.signals.risk.some(s => lastMsg.includes(s))) {
-            updates.risk_profile = Math.min(1, this.userModel.risk_profile + 0.05);
-        }
-
-        // تحليل التفكير طويل المدى
-        if (this.signals.longTerm.some(s => lastMsg.includes(s))) {
-            updates.long_term_focus = Math.min(1, this.userModel.long_term_focus + 0.05);
-        }
-
-        // تحليل التناقض وتغيير الاتجاه (سادساً: Decision Pattern Engine كبداية)
-        if (lastMessages.length >= 3) {
-            const prevMsg = lastMessages[lastMessages.length - 2].content.toLowerCase();
-            if (this.signals.contradiction.some(s => lastMsg.includes(s))) {
-                updates.consistency_score = Math.max(0, this.userModel.consistency_score - 0.05);
-                await this.logEvent('PATTERN_DETECTED', lastMsg, 'User showing contradiction or direction change', 0.4);
-            }
-        }
-
-        if (Object.keys(updates).length > 0) {
-            await this.updateUserModel(updates);
-        }
+        if (Object.keys(updates).length > 0) await this.updateUserModel(updates);
     }
 
-    // رابعاً: Memory Engine المحسّن
-    async updateMemoryWeight(memoryId, isSuccess) {
-        try {
-            const { data: memory } = await this.supabase.from('brain_memory').select('*').eq('id', memoryId).single();
-            if (!memory) return;
-
-            const factor = 0.1;
-            const successCount = memory.success_count + (isSuccess ? 1 : 0);
-            const failCount = memory.fail_count + (isSuccess ? 0 : 1);
-            
-            // newWeight = baseWeight + (success_count × factor) − (fail_count × factor)
-            const baseWeight = 1.0; 
-            const newWeight = Math.max(0.1, baseWeight + (successCount * factor) - (failCount * factor));
-
-            await this.supabase.from('brain_memory').update({
-                success_count: successCount,
-                fail_count: failCount,
-                weight: newWeight,
-                last_used: new Date()
-            }).eq('id', memoryId);
-        } catch (e) {
-            console.error("Error updating memory weight:", e);
-        }
-    }
-
-    // خامساً: Associative Linking (سيتم استدعاؤه من app.js)
-    formatAssociativeResponse(rankedMatches) {
-        if (rankedMatches.length <= 1) return rankedMatches[0]?.response || "";
-        
-        const mainResponse = rankedMatches[0].response;
-        const associations = rankedMatches.slice(1, 3).map(m => m.trigger_keywords[0]).join(' و ');
-        
-        return `${mainResponse}\n\n<div class="associative-link">💡 تذكير معرفي: هذا يرتبط أيضاً بما تعلمته عن (${associations}).</div>`;
-    }
-
-    // سابعاً: Intervention Logic متطور
-    shouldIntervene(userMessage) {
-        const { independence_score, confidence_score } = this.aiState;
-        const { decisiveness_score, consistency_score } = this.userModel;
-
-        const threshold = 0.6;
-        
-        // يتدخل النظام إذا كان مستقلاً وواثقاً + المستخدم يظهر تردداً أو تناقضاً
-        if (independence_score > threshold && confidence_score > 0.6) {
-            if (decisiveness_score < 0.4 || consistency_score < 0.4) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    getIntervention(userMessage) {
-        if (this.userModel.decisiveness_score < 0.4) {
-            return "لاحظت أنك تتردد في هذا القرار. هل فكرت في تقليل المخاطرة والتركيز على الأهداف طويلة المدى؟";
-        }
-        if (this.userModel.consistency_score < 0.4) {
-            return "يبدو أن هناك تضارباً مع قراراتك السابقة. هل تريد مراجعة الرؤية الاستراتيجية؟";
-        }
-        return "بصفتي شريكك المعرفي، أقترح إعادة تقييم هذا المسار بناءً على نمط سلوكك الأخير.";
-    }
-
-    // ثامناً: تطوير evolveAI
     async evolveAI(interactionSuccess) {
         let { age_level, intelligence_score, confidence_score, independence_score, learning_speed } = this.aiState;
-
-        // النجاح يزيد intelligence & confidence
         intelligence_score += learning_speed * (interactionSuccess ? 1.5 : 0.5);
-        confidence_score += interactionSuccess ? 0.02 : -0.05; // الفشل يقلل confidence أكثر
-        
+        confidence_score += interactionSuccess ? 0.02 : -0.05;
         if (intelligence_score > age_level * 5) {
             age_level++;
             independence_score = Math.min(1, independence_score + 0.05);
-            await this.logEvent('EVOLUTION', null, `System evolved to cognitive level ${age_level}`, 0.9);
         }
-
-        await this.updateAIState({
-            age_level,
-            intelligence_score: Math.min(20, intelligence_score),
-            confidence_score: Math.max(0, Math.min(1, confidence_score)),
-            independence_score: Math.max(0, Math.min(1, independence_score))
-        });
+        await this.updateAIState({ age_level, intelligence_score: Math.min(20, intelligence_score), confidence_score: Math.max(0, Math.min(1, confidence_score)), independence_score: Math.max(0, Math.min(1, independence_score)) });
     }
 
-    // مساعدات
     async updateUserModel(updates) {
         if (!this.userModel) return;
         const { data } = await this.supabase.from('user_model').update({ ...updates, last_updated: new Date() }).eq('id', this.userModel.id).select().single();
@@ -182,25 +143,7 @@ class CognitiveGrowthEngine {
     }
 
     async logEvent(type, msg, pattern, impact) {
-        await this.supabase.from('event_log').insert([{
-            event_type: type,
-            related_message: msg,
-            inferred_pattern: pattern,
-            impact_score: impact
-        }]);
-    }
-
-    // Decay Logic (Server-side or Batch)
-    async applyDecay() {
-        // يمكن استدعاؤه دورياً لتقليل الأوزان غير المستخدمة
-        const { data: memories } = await this.supabase.from('brain_memory').select('id, weight, last_used');
-        const now = new Date();
-        for (let m of memories) {
-            const daysSinceUsed = (now - new Date(m.last_used)) / (1000 * 60 * 60 * 24);
-            if (daysSinceUsed > 7 && m.weight > 0.5) {
-                await this.supabase.from('brain_memory').update({ weight: m.weight - 0.05 }).eq('id', m.id);
-            }
-        }
+        await this.supabase.from('event_log').insert([{ event_type: type, related_message: msg, inferred_pattern: pattern, impact_score: impact }]);
     }
 }
 

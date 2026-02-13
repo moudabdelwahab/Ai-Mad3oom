@@ -321,3 +321,56 @@ small {
 }
 
 .hidden { display: none !important; }
+
+/* Decision OS UI Components */
+.message-wrapper {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 1rem;
+}
+
+.decision-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0 0.5rem;
+    align-self: flex-end;
+}
+
+.tool-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 0.35rem 0.65rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.tool-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+}
+
+.tool-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.decision-result {
+    border-right: 3px solid var(--accent);
+    padding-right: 10px;
+    background: rgba(109, 93, 252, 0.05);
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 0.9rem;
+}
+
+[data-theme="dark"] .decision-result {
+    background: rgba(139, 92, 246, 0.1);
+}
