@@ -108,10 +108,12 @@ async function analyzeAndLearnFromResponse(aiResponse) {
         const cleanJson = rawAnalysis.replace(/```json|```/g, "").trim();
         const data = JSON.parse(cleanJson);
         
-        for (const item of data.knowledge) {
-            const isDuplicate = await checkMemorySimilarity(item.keywords);
-            if (!isDuplicate) {
-                await saveToMemory(item.type, item.keywords, item.content, 2);
+        if (data && data.knowledge) {
+            for (const item of data.knowledge) {
+                const isDuplicate = await checkMemorySimilarity(item.keywords);
+                if (!isDuplicate) {
+                    await saveToMemory(item.type, item.keywords, item.content, 2);
+                }
             }
         }
     } catch (e) {}
@@ -187,23 +189,26 @@ function updateCognitiveUI(state) {
 }
 
 function displayMessage(msg) {
+    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+    if (!content) return;
+
     const existingMessages = Array.from(messagesList.querySelectorAll('.message'));
-    const isDuplicate = existingMessages.some(el => el.innerHTML === msg.content && el.classList.contains(msg.role));
+    const isDuplicate = existingMessages.some(el => el.textContent === content && el.classList.contains(msg.role));
     if (isDuplicate) return;
 
     if (msg.role === 'assistant') typingIndicator.classList.add('hidden');
 
     const div = document.createElement('div');
     div.className = `message ${msg.role}`;
-    div.innerHTML = msg.content;
+    div.textContent = content;
     messagesList.appendChild(div);
     messagesList.scrollTop = messagesList.scrollHeight;
     
     if (msg.role === 'assistant') {
-        lastAssistantResponse = msg.content;
+        lastAssistantResponse = content;
     } else {
-        lastUserMessage = msg.content;
-        messageHistory.push(msg);
+        lastUserMessage = content;
+        messageHistory.push({ role: msg.role, content: content });
         if (messageHistory.length > 50) messageHistory.shift();
     }
 }
@@ -232,9 +237,14 @@ async function handleUserMessage(text) {
     }
 
     setTimeout(async () => {
-        const response = await generateResponse(text);
-        displayMessage({ role: 'assistant', content: response });
-        await saveMessage('assistant', response);
+        try {
+            const response = await generateResponse(text);
+            displayMessage({ role: 'assistant', content: response });
+            await saveMessage('assistant', response);
+        } catch (err) {
+            console.error("Response generation failed:", err);
+            typingIndicator.classList.add('hidden');
+        }
     }, 800);
 }
 

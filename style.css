@@ -150,13 +150,15 @@ header {
 }
 
 .message {
-    max-width: 75%;
-    padding: 0.875rem 1.125rem;
-    border-radius: 16px;
+    max-width: 80%;
+    width: fit-content; /* يضمن أن الفقاعة تأخذ حجم النص فقط */
+    padding: 0.8rem 1.1rem;
+    border-radius: 18px;
     font-size: 0.95rem;
     line-height: 1.5;
     position: relative;
     animation: fadeIn 0.3s ease-out;
+    word-wrap: break-word;
 }
 
 @keyframes fadeIn {
